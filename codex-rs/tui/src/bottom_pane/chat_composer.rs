@@ -465,16 +465,31 @@ impl ChatComposer<'_> {
             .unwrap_or("");
 
         let input_starts_with_slash = first_line.starts_with('/');
+
+        // Determine if we should skip showing the built-in command popup.
+        // Heuristic: if the first token contains a ':' (e.g. "/project:") we
+        // assume the user intends to invoke a *custom* command that lives on
+        // disk and therefore isn't part of the built-in list.
+        let skip_popup = if input_starts_with_slash {
+            first_line
+                .trim_start_matches('/')
+                .split_whitespace()
+                .next()
+                .map(|tok| tok.contains(':'))
+                .unwrap_or(false)
+        } else {
+            false
+        };
         match &mut self.active_popup {
             ActivePopup::Command(popup) => {
-                if input_starts_with_slash {
+                if input_starts_with_slash && !skip_popup {
                     popup.on_composer_text_change(first_line.to_string());
                 } else {
                     self.active_popup = ActivePopup::None;
                 }
             }
             _ => {
-                if input_starts_with_slash {
+                if input_starts_with_slash && !skip_popup {
                     let mut command_popup = CommandPopup::new();
                     command_popup.on_composer_text_change(first_line.to_string());
                     self.active_popup = ActivePopup::Command(command_popup);
