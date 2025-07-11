@@ -78,3 +78,49 @@ pub fn expand_custom_command(input: &str, cwd: &Path) -> Option<String> {
 
     Some(prompt)
 }
+
+/// Recursively discover all custom command Markdown files in both project and
+/// user scopes and return their *slash* names without the leading '/'. The
+/// returned strings include the scope prefix (e.g. `project:foo`,
+/// `user:bar__baz`).
+pub fn discover_custom_commands() -> Vec<String> {
+    fn gather(root: &Path, scope: &str, out: &mut Vec<String>) {
+        if !root.exists() {
+            return;
+        }
+        // Walk the directory recursively. Use a simple stack to avoid adding
+        // the walkdir dependency.
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        stack.push(path);
+                    } else if path.extension().map(|ext| ext == "md").unwrap_or(false) {
+                        if let Ok(rel) = path.strip_prefix(root) {
+                            // Build command name.
+                            if let Some(stem) = rel.to_str() {
+                                let mut cmd = stem.trim_end_matches(".md").replace(std::path::MAIN_SEPARATOR, "__");
+                                cmd.make_ascii_lowercase();
+                                out.push(format!("{}:{}", scope, cmd));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut commands = Vec::new();
+
+    if let Ok(cwd) = env::current_dir() {
+        gather(&cwd.join(".codex/commands"), "project", &mut commands);
+    }
+
+    if let Ok(home) = env::var("HOME") {
+        gather(&PathBuf::from(home).join(".codex/commands"), "user", &mut commands);
+    }
+
+    commands
+}
