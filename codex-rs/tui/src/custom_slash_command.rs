@@ -131,3 +131,86 @@ pub fn discover_custom_commands() -> Vec<String> {
 
     commands
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    // Helper to write a markdown file with given relative path inside root.
+    fn write_md(root: &Path, rel: &str, content: &str) -> PathBuf {
+        let path = root.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&path, content).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_expand_project_command() {
+        let project_dir = TempDir::new().unwrap();
+        let commands_dir = project_dir.path().join(".codex/commands");
+        write_md(&commands_dir, "fix.md", "Fixing $ARGUMENTS now!");
+
+        // No explicit scope prefix -> defaults to project.
+        let input = "/fix missing tests";
+        let expanded = expand_custom_command(input, project_dir.path()).unwrap();
+        assert_eq!(expanded, "Fixing missing tests now!");
+    }
+
+    #[test]
+    fn test_expand_user_command() {
+        let home_dir = TempDir::new().unwrap();
+        let user_commands_dir = home_dir.path().join(".codex/commands");
+        write_md(
+            &user_commands_dir,
+            "review/security.md",
+            "Security review: $ARGUMENTS",
+        );
+
+        // Temporarily override HOME for this test.
+        // Setting HOME for the duration of the test. Marked unsafe in edition 2024.
+        unsafe {
+            std::env::set_var("HOME", home_dir.path());
+        }
+
+        let cwd = Path::new("/"); // cwd is irrelevant for user scope here.
+        let input = "/user:review__security critical module";
+        let expanded = expand_custom_command(input, cwd).unwrap();
+        assert_eq!(expanded, "Security review: critical module");
+    }
+
+    #[test]
+    fn test_discover_commands() {
+        let project_dir = TempDir::new().unwrap();
+        let commands_dir = project_dir.path().join(".codex/commands");
+        write_md(&commands_dir, "a.md", "A");
+        write_md(&commands_dir, "nested/b.md", "B");
+
+        let home_dir = TempDir::new().unwrap();
+        let user_commands_dir = home_dir.path().join(".codex/commands");
+        write_md(&user_commands_dir, "c.md", "C");
+
+        // Override env vars so discover_custom_commands sees our dirs.
+        std::env::set_current_dir(project_dir.path()).unwrap();
+        unsafe {
+            std::env::set_var("HOME", home_dir.path());
+        }
+
+        let mut commands = discover_custom_commands();
+        commands.sort();
+
+        let expected = vec![
+            "project:a".to_string(),
+            "project:nested__b".to_string(),
+            "user:c".to_string(),
+        ];
+        assert_eq!(commands, expected);
+    }
+}
