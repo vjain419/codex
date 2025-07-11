@@ -23,6 +23,7 @@ use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;
 use crate::client_common::ResponsesApiRequest;
 use crate::client_common::create_reasoning_param_for_request;
+use crate::config::Config;
 use crate::config_types::ReasoningEffort as ReasoningEffortConfig;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::error::CodexErr;
@@ -36,10 +37,11 @@ use crate::models::ResponseItem;
 use crate::openai_tools::create_tools_json_for_responses_api;
 use crate::protocol::TokenUsage;
 use crate::util::backoff;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ModelClient {
-    model: String,
+    config: Arc<Config>,
     client: reqwest::Client,
     provider: ModelProviderInfo,
     effort: ReasoningEffortConfig,
@@ -48,13 +50,13 @@ pub struct ModelClient {
 
 impl ModelClient {
     pub fn new(
-        model: impl ToString,
+        config: Arc<Config>,
         provider: ModelProviderInfo,
         effort: ReasoningEffortConfig,
         summary: ReasoningSummaryConfig,
     ) -> Self {
         Self {
-            model: model.to_string(),
+            config,
             client: reqwest::Client::new(),
             provider,
             effort,
@@ -70,9 +72,13 @@ impl ModelClient {
             WireApi::Responses => self.stream_responses(prompt).await,
             WireApi::Chat => {
                 // Create the raw streaming connection first.
-                let response_stream =
-                    stream_chat_completions(prompt, &self.model, &self.client, &self.provider)
-                        .await?;
+                let response_stream = stream_chat_completions(
+                    prompt,
+                    &self.config.model,
+                    &self.client,
+                    &self.provider,
+                )
+                .await?;
 
                 // Wrap it with the aggregation adapter so callers see *only*
                 // the final assistant message per turn (matching the
@@ -106,11 +112,11 @@ impl ModelClient {
             return stream_from_fixture(path).await;
         }
 
-        let full_instructions = prompt.get_full_instructions(&self.model);
-        let tools_json = create_tools_json_for_responses_api(prompt, &self.model)?;
-        let reasoning = create_reasoning_param_for_request(&self.model, self.effort, self.summary);
+        let full_instructions = prompt.get_full_instructions(&self.config.model);
+        let tools_json = create_tools_json_for_responses_api(prompt, &self.config.model)?;
+        let reasoning = create_reasoning_param_for_request(&self.config, self.effort, self.summary);
         let payload = ResponsesApiRequest {
-            model: &self.model,
+            model: &self.config.model,
             instructions: &full_instructions,
             input: &prompt.input,
             tools: &tools_json,
