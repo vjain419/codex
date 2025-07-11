@@ -235,14 +235,15 @@ impl ChatComposer<'_> {
                                 .map(|s| s.as_str())
                                 .unwrap_or("");
 
-                            let cmd_with_slash = format!("/{}", name);
-                            let starts_with_cmd = first_line.trim_start().starts_with(&cmd_with_slash);
+                            let cmd_with_slash = format!("/{name}");
+                            let starts_with_cmd =
+                                first_line.trim_start().starts_with(&cmd_with_slash);
 
                             if !starts_with_cmd {
                                 // Autocomplete: replace existing text with the chosen command.
                                 self.textarea.select_all();
                                 self.textarea.cut();
-                                let _ = self.textarea.insert_str(format!("{} ", cmd_with_slash));
+                                let _ = self.textarea.insert_str(format!("{cmd_with_slash} "));
                                 // Keep popup hidden; user can now add args and press Enter again.
                                 self.active_popup = ActivePopup::None;
                                 return (InputResult::None, true);
@@ -716,8 +717,7 @@ mod tests {
             let result = ChatComposer::current_at_token(&textarea);
             assert_eq!(
                 result, expected,
-                "Failed for case: {} - input: '{}', cursor: {}",
-                description, input, cursor_pos
+                "Failed for case: {description} - input: '{input}', cursor: {cursor_pos}",
             );
         }
     }

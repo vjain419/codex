@@ -12,9 +12,9 @@ use ratatui::widgets::Table;
 use ratatui::widgets::Widget;
 use ratatui::widgets::WidgetRef;
 
+use crate::custom_slash_command::discover_custom_commands;
 use crate::slash_command::SlashCommand;
 use crate::slash_command::built_in_slash_commands;
-use crate::custom_slash_command::discover_custom_commands;
 
 /// Entry representing either a built-in or a custom slash command.
 #[derive(Clone)]
@@ -25,7 +25,7 @@ pub(super) enum CommandEntry {
 
 impl CommandEntry {
     pub(super) fn command(&self) -> &str {
-    match self {
+        match self {
             CommandEntry::BuiltIn(cmd) => cmd.command(),
             CommandEntry::Custom { name } => name.as_str(),
         }
@@ -175,7 +175,8 @@ impl WidgetRef for CommandPopup {
         let matches = self.filtered_commands();
 
         let mut rows: Vec<Row> = Vec::new();
-        let visible_matches: Vec<&CommandEntry> = matches.into_iter().take(MAX_POPUP_ROWS).collect();
+        let visible_matches: Vec<&CommandEntry> =
+            matches.into_iter().take(MAX_POPUP_ROWS).collect();
 
         if visible_matches.is_empty() {
             rows.push(Row::new(vec![

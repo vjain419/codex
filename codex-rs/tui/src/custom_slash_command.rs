@@ -22,7 +22,8 @@
 
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 
 /// Attempt to expand a user-supplied slash command. If the command corresponds
 /// to a custom prompt file this returns `Some(prompt)` where `prompt` is the
@@ -62,7 +63,7 @@ pub fn expand_custom_command(input: &str, cwd: &Path) -> Option<String> {
     };
 
     // Convert cmd_name: replace __ with path separators and append .md
-    let relative_path = cmd_name.replace("__", &std::path::MAIN_SEPARATOR.to_string()) + ".md";
+    let relative_path = cmd_name.replace("__", std::path::MAIN_SEPARATOR_STR) + ".md";
     let file_path = root.join(relative_path);
 
     // Security: ensure file path is within root.
@@ -101,9 +102,11 @@ pub fn discover_custom_commands() -> Vec<String> {
                         if let Ok(rel) = path.strip_prefix(root) {
                             // Build command name.
                             if let Some(stem) = rel.to_str() {
-                                let mut cmd = stem.trim_end_matches(".md").replace(std::path::MAIN_SEPARATOR, "__");
+                                let mut cmd = stem
+                                    .trim_end_matches(".md")
+                                    .replace(std::path::MAIN_SEPARATOR, "__");
                                 cmd.make_ascii_lowercase();
-                                out.push(format!("{}:{}", scope, cmd));
+                                out.push(format!("{scope}:{cmd}"));
                             }
                         }
                     }
@@ -119,7 +122,11 @@ pub fn discover_custom_commands() -> Vec<String> {
     }
 
     if let Ok(home) = env::var("HOME") {
-        gather(&PathBuf::from(home).join(".codex/commands"), "user", &mut commands);
+        gather(
+            &PathBuf::from(home).join(".codex/commands"),
+            "user",
+            &mut commands,
+        );
     }
 
     commands

@@ -176,8 +176,8 @@ impl ChatWidget<'_> {
 
     fn submit_user_message(&mut self, user_message: UserMessage) {
         let UserMessage { text, image_paths } = user_message;
-        use std::path::Path;
         use crate::custom_slash_command::expand_custom_command;
+        use std::path::Path;
 
         let mut items: Vec<InputItem> = Vec::new();
 
@@ -191,7 +191,9 @@ impl ChatWidget<'_> {
         };
 
         if !expanded_text.is_empty() {
-            items.push(InputItem::Text { text: expanded_text.clone() });
+            items.push(InputItem::Text {
+                text: expanded_text.clone(),
+            });
         }
 
         for path in image_paths {
