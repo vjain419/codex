@@ -14,6 +14,7 @@ use codex_core::util::is_inside_git_repo;
 use codex_login::try_read_openai_api_key;
 use log_layer::TuiLogLayer;
 use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::PathBuf;
 use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
@@ -34,10 +35,9 @@ mod file_search;
 mod get_git_diff;
 mod git_warning_screen;
 mod history_cell;
+mod insert_history;
 mod log_layer;
-mod login_screen;
 mod markdown;
-mod mouse_capture;
 mod scroll_event_helper;
 mod slash_command;
 mod status_indicator_widget;
@@ -48,7 +48,10 @@ mod user_approval_widget;
 
 pub use cli::Cli;
 
-pub fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> std::io::Result<()> {
+pub async fn run_main(
+    cli: Cli,
+    codex_linux_sandbox_exe: Option<PathBuf>,
+) -> std::io::Result<codex_core::protocol::TokenUsage> {
     let (sandbox_mode, approval_policy) = if cli.full_auto {
         (
             Some(SandboxMode::WorkspaceWrite),
@@ -76,6 +79,7 @@ pub fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> std::io::
             model_provider: None,
             config_profile: cli.config_profile.clone(),
             codex_linux_sandbox_exe,
+            base_instructions: None,
         };
         // Parse `-c` overrides from the CLI.
         let cli_kv_overrides = match cli.config_overrides.parse_overrides() {
@@ -139,7 +143,25 @@ pub fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> std::io::
         .with(tui_layer)
         .try_init();
 
-    let show_login_screen = should_show_login_screen(&config);
+    let show_login_screen = should_show_login_screen(&config).await;
+    if show_login_screen {
+        std::io::stdout().write_all(
+            b"Oh dear, we don't seem to have an API key.\nTerribly sorry, but may I open a browser window for you to log in? [Yn] ",
+        )?;
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim();
+        if !(trimmed.is_empty() || trimmed.eq_ignore_ascii_case("y")) {
+            std::io::stdout().write_all(b"Right-o, fair enough. See you next time!\n")?;
+            std::process::exit(1);
+        }
+        // Spawn a task to run the login command.
+        // Block until the login command is finished.
+        let new_key = codex_login::login_with_chatgpt(&config.codex_home, false).await?;
+        set_openai_api_key(new_key);
+        std::io::stdout().write_all(b"Excellent, looks like that worked. Let's get started!\n")?;
+    }
 
     // Determine whether we need to display the "not a git repo" warning
     // modal. The flag is shown when the current working directory is *not*
@@ -147,52 +169,28 @@ pub fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> std::io::
     // `--allow-no-git-exec` flag.
     let show_git_warning = !cli.skip_git_repo_check && !is_inside_git_repo(&config);
 
-    try_run_ratatui_app(cli, config, show_login_screen, show_git_warning, log_rx);
-    Ok(())
-}
-
-#[expect(
-    clippy::print_stderr,
-    reason = "Resort to stderr in exceptional situations."
-)]
-fn try_run_ratatui_app(
-    cli: Cli,
-    config: Config,
-    show_login_screen: bool,
-    show_git_warning: bool,
-    log_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
-) {
-    if let Err(report) = run_ratatui_app(cli, config, show_login_screen, show_git_warning, log_rx) {
-        eprintln!("Error: {report:?}");
-    }
+    run_ratatui_app(cli, config, show_git_warning, log_rx)
+        .map_err(|err| std::io::Error::other(err.to_string()))
 }
 
 fn run_ratatui_app(
     cli: Cli,
     config: Config,
-    show_login_screen: bool,
     show_git_warning: bool,
     mut log_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
-) -> color_eyre::Result<()> {
+) -> color_eyre::Result<codex_core::protocol::TokenUsage> {
     color_eyre::install()?;
 
-    // Forward panic reports through the tracing stack so that they appear in
-    // the status indicator instead of breaking the alternate screen – the
-    // normal colour‑eyre hook writes to stderr which would corrupt the UI.
+    // Forward panic reports through tracing so they appear in the UI status
+    // line instead of interleaving raw panic output with the interface.
     std::panic::set_hook(Box::new(|info| {
         tracing::error!("panic: {info}");
     }));
-    let (mut terminal, mut mouse_capture) = tui::init(&config)?;
+    let mut terminal = tui::init(&config)?;
     terminal.clear()?;
 
     let Cli { prompt, images, .. } = cli;
-    let mut app = App::new(
-        config.clone(),
-        prompt,
-        show_login_screen,
-        show_git_warning,
-        images,
-    );
+    let mut app = App::new(config.clone(), prompt, show_git_warning, images);
 
     // Bridge log receiver into the AppEvent channel so latest log lines update the UI.
     {
@@ -204,10 +202,12 @@ fn run_ratatui_app(
         });
     }
 
-    let app_result = app.run(&mut terminal, &mut mouse_capture);
+    let app_result = app.run(&mut terminal);
+    let usage = app.token_usage();
 
     restore();
-    app_result
+    // ignore error when collecting usage – report underlying error instead
+    app_result.map(|_| usage)
 }
 
 #[expect(
@@ -222,26 +222,17 @@ fn restore() {
     }
 }
 
-#[allow(clippy::unwrap_used)]
-fn should_show_login_screen(config: &Config) -> bool {
+async fn should_show_login_screen(config: &Config) -> bool {
     if is_in_need_of_openai_api_key(config) {
         // Reading the OpenAI API key is an async operation because it may need
         // to refresh the token. Block on it.
         let codex_home = config.codex_home.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            match try_read_openai_api_key(&codex_home).await {
-                Ok(openai_api_key) => {
-                    set_openai_api_key(openai_api_key);
-                    tx.send(false).unwrap();
-                }
-                Err(_) => {
-                    tx.send(true).unwrap();
-                }
-            }
-        });
-        // TODO(mbolin): Impose some sort of timeout.
-        tokio::task::block_in_place(|| rx.blocking_recv()).unwrap()
+        if let Ok(openai_api_key) = try_read_openai_api_key(&codex_home).await {
+            set_openai_api_key(openai_api_key);
+            false
+        } else {
+            true
+        }
     } else {
         false
     }

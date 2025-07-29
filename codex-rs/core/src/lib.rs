@@ -5,11 +5,14 @@
 // the TUI or the tracing stack).
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
+mod apply_patch;
+mod bash;
 mod chat_completions;
 mod client;
 mod client_common;
 pub mod codex;
 pub use codex::Codex;
+pub use codex::CodexSpawnOk;
 pub mod codex_wrapper;
 pub mod config;
 pub mod config_profile;
@@ -19,6 +22,7 @@ pub mod error;
 pub mod exec;
 pub mod exec_env;
 mod flags;
+pub mod git_info;
 mod is_safe_command;
 mod mcp_connection_manager;
 mod mcp_tool_call;
@@ -34,6 +38,7 @@ mod project_doc;
 pub mod protocol;
 mod rollout;
 mod safety;
+pub mod shell;
 mod user_notification;
 pub mod util;
 

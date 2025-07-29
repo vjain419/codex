@@ -19,6 +19,7 @@ anyhow = "1"
 base64 = "0.22.1"
 clap = { version = "4", features = ["derive"] }
 codex-ansi-escape = { path = "../ansi-escape" }
+codex-arg0 = { path = "../arg0" }
 codex-core = { path = "../core" }
 codex-common = { path = "../common", features = [
     "cli",
@@ -26,7 +27,6 @@ codex-common = { path = "../common", features = [
     "sandbox_summary",
 ] }
 codex-file-search = { path = "../file-search" }
-codex-linux-sandbox = { path = "../linux-sandbox" }
 codex-login = { path = "../login" }
 color-eyre = "0.6.3"
 crossterm = { version = "0.28.1", features = ["bracketed-paste"] }
@@ -35,15 +35,16 @@ lazy_static = "1"
 mcp-types = { path = "../mcp-types" }
 path-clean = "1.0.1"
 ratatui = { version = "0.29.0", features = [
-    "unstable-widget-ref",
+    "scrolling-regions",
     "unstable-rendered-line-info",
+    "unstable-widget-ref",
 ] }
 ratatui-image = "8.0.0"
 regex-lite = "0.1"
 serde_json = { version = "1", features = ["preserve_order"] }
 shlex = "1.3.0"
-strum = "0.27.1"
-strum_macros = "0.27.1"
+strum = "0.27.2"
+strum_macros = "0.27.2"
 tokio = { version = "1", features = [
     "io-std",
     "macros",
@@ -58,6 +59,7 @@ tui-input = "0.14.0"
 tui-markdown = "0.3.3"
 tui-textarea = "0.7.0"
 unicode-segmentation = "1.12.0"
+unicode-width = "0.1"
 uuid = "1"
 
 [dev-dependencies]
