@@ -30,10 +30,11 @@ mod message_history;
 mod model_provider_info;
 pub use model_provider_info::ModelProviderInfo;
 pub use model_provider_info::WireApi;
+pub use model_provider_info::built_in_model_providers;
 mod models;
-pub mod openai_api_key;
 mod openai_model_info;
 mod openai_tools;
+pub mod plan_tool;
 mod project_doc;
 pub mod protocol;
 mod rollout;
@@ -42,4 +43,5 @@ pub mod shell;
 mod user_notification;
 pub mod util;
 
+pub use apply_patch::CODEX_APPLY_PATCH_ARG1;
 pub use client_common::model_supports_reasoning_summaries;
