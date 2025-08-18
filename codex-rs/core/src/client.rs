@@ -169,10 +169,10 @@ impl ModelClient {
             create_text_param_for_request(self.config.model_verbosity)
         } else {
             if self.config.model_verbosity.is_some() {
-            warn!(
-                "model_verbosity is set but ignored for non-gpt-5 model family: {}",
-                self.config.model_family.family
-            );
+                warn!(
+                    "model_verbosity is set but ignored for non-gpt-5 model family: {}",
+                    self.config.model_family.family
+                );
             }
             None
         };

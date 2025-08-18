@@ -1,5 +1,3 @@
-use crate::config_types::ReasoningEffort as ReasoningEffortConfig;
-use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::config_types::Verbosity as VerbosityConfig;
 use crate::error::Result;
 use crate::model_family::ModelFamily;
@@ -138,6 +136,7 @@ pub(crate) struct ResponsesApiRequest<'a> {
     pub(crate) include: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) prompt_cache_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) text: Option<TextControls>,
 }
 
@@ -205,6 +204,7 @@ mod tests {
             store: true,
             stream: true,
             include: vec![],
+            prompt_cache_key: None,
             text: Some(TextControls {
                 verbosity: Some(OpenAiVerbosity::Low),
             }),
@@ -234,6 +234,7 @@ mod tests {
             store: true,
             stream: true,
             include: vec![],
+            prompt_cache_key: None,
             text: None,
         };
 

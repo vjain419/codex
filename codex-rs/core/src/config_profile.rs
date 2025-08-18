@@ -1,8 +1,6 @@
 use serde::Deserialize;
 use std::path::PathBuf;
 
-use crate::config_types::ReasoningEffort;
-use crate::config_types::ReasoningSummary;
 use crate::config_types::Verbosity;
 use crate::protocol::AskForApproval;
 use codex_protocol::config_types::ReasoningEffort;
