@@ -11,10 +11,12 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use mcp_types::CallToolResult;
+use mcp_types::Tool as McpTool;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_bytes::ByteBuf;
 use strum_macros::Display;
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::config_types::ReasoningEffort as ReasoningEffortConfig;
@@ -135,6 +137,10 @@ pub enum Op {
     /// Request a single history entry identified by `log_id` + `offset`.
     GetHistoryEntryRequest { offset: usize, log_id: u64 },
 
+    /// Request the list of MCP tools available across all configured servers.
+    /// Reply is delivered via `EventMsg::McpListToolsResponse`.
+    ListMcpTools,
+
     /// Request the agent to summarize the current conversation context.
     /// The agent will use its existing context (either conversation history or previous response id)
     /// to generate a summary which will be returned as an AgentMessage event.
@@ -145,7 +151,7 @@ pub enum Op {
 
 /// Determines the conditions under which the user is consulted to approve
 /// running the command proposed by Codex.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Display, TS)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum AskForApproval {
@@ -172,7 +178,7 @@ pub enum AskForApproval {
 }
 
 /// Determines execution restrictions for model shell commands.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, TS)]
 #[strum(serialize_all = "kebab-case")]
 #[serde(tag = "mode", rename_all = "kebab-case")]
 pub enum SandboxPolicy {
@@ -440,6 +446,10 @@ pub enum EventMsg {
 
     BackgroundEvent(BackgroundEventEvent),
 
+    /// Notification that a model stream experienced an error or disconnect
+    /// and the system is handling it (e.g., retrying with backoff).
+    StreamError(StreamErrorEvent),
+
     /// Notification that the agent is about to apply a code patch. Mirrors
     /// `ExecCommandBegin` so front‑ends can show progress indicators.
     PatchApplyBegin(PatchApplyBeginEvent),
@@ -451,6 +461,9 @@ pub enum EventMsg {
 
     /// Response to GetHistoryEntryRequest.
     GetHistoryEntryResponse(GetHistoryEntryResponseEvent),
+
+    /// List of MCP tools available to the agent.
+    McpListToolsResponse(McpListToolsResponseEvent),
 
     PlanUpdate(UpdatePlanArgs),
 
@@ -506,6 +519,33 @@ impl TokenUsage {
     pub fn tokens_in_context_window(&self) -> u64 {
         self.total_tokens
             .saturating_sub(self.reasoning_output_tokens.unwrap_or(0))
+    }
+
+    /// Estimate the remaining user-controllable percentage of the model's context window.
+    ///
+    /// `context_window` is the total size of the model's context window.
+    /// `baseline_used_tokens` should capture tokens that are always present in
+    /// the context (e.g., system prompt and fixed tool instructions) so that
+    /// the percentage reflects the portion the user can influence.
+    ///
+    /// This normalizes both the numerator and denominator by subtracting the
+    /// baseline, so immediately after the first prompt the UI shows 100% left
+    /// and trends toward 0% as the user fills the effective window.
+    pub fn percent_of_context_window_remaining(
+        &self,
+        context_window: u64,
+        baseline_used_tokens: u64,
+    ) -> u8 {
+        if context_window <= baseline_used_tokens {
+            return 0;
+        }
+
+        let effective_window = context_window - baseline_used_tokens;
+        let used = self
+            .tokens_in_context_window()
+            .saturating_sub(baseline_used_tokens);
+        let remaining = effective_window.saturating_sub(used);
+        ((remaining as f32 / effective_window as f32) * 100.0).clamp(0.0, 100.0) as u8
     }
 }
 
@@ -686,6 +726,11 @@ pub struct BackgroundEventEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StreamErrorEvent {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PatchApplyBeginEvent {
     /// Identifier so this can be paired with the PatchApplyEnd event.
     pub call_id: String,
@@ -721,6 +766,13 @@ pub struct GetHistoryEntryResponseEvent {
     pub entry: Option<HistoryEntry>,
 }
 
+/// Response payload for `Op::ListMcpTools`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct McpListToolsResponseEvent {
+    /// Fully qualified tool name -> tool definition.
+    pub tools: std::collections::HashMap<String, McpTool>,
+}
+
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct SessionConfiguredEvent {
     /// Unique id for this session.
@@ -737,7 +789,7 @@ pub struct SessionConfiguredEvent {
 }
 
 /// User's decision in response to an ExecApprovalRequest.
-#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewDecision {
     /// User has approved this command and the agent should execute it.
@@ -758,7 +810,7 @@ pub enum ReviewDecision {
     Abort,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum FileChange {
     Add {
@@ -784,7 +836,7 @@ pub struct TurnAbortedEvent {
     pub reason: TurnAbortReason,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnAbortReason {
     Interrupted,
